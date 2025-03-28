@@ -1,0 +1,71 @@
+---
+stages: [hygiene, build, publish]
+
+default:
+  image: rust:1.85-bookworm
+  cache:
+    paths: [.cache/pip]
+  before_script:
+    - echo "deb https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm main contrib non-free" > /etc/apt/sources.list
+    - echo "deb-src https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm main contrib non-free" >> /etc/apt/sources.list
+    - echo "deb https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm-updates main contrib non-free" >> /etc/apt/sources.list
+    - echo "deb-src https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm-updates main contrib non-free" >> /etc/apt/sources.list
+    - echo "deb https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm-backports main" >> /etc/apt/sources.list
+    - echo "deb-src https://artifactory.research.volexity.com/artifactory/debian-proxy/
+      bookworm-backports main" >> /etc/apt/sources.list
+    - echo "deb https://artifactory.research.volexity.com/artifactory/debian-security-proxy/
+      bookworm-security main contrib non-free" >> /etc/apt/sources.list
+    - echo "deb-src https://artifactory.research.volexity.com/artifactory/debian-security-proxy/
+      bookworm-security main contrib non-free" >> /etc/apt/sources.list
+    - apt update
+    - apt install -y build-essential debhelper-compat devscripts dh-python pybuild-plugin-pyproject
+      python3 python3-pip python3-full python3-all
+    - rustup component add clippy
+    - python3 -V
+    - python3 -m venv .venv
+    - source .venv/bin/activate
+    - pip install hatch maturin
+
+variables:
+  EMAIL: threatintel@volexity.com
+  HATCH_INDEX_AUTH: $ARTIFACTORY_TOKEN
+  HATCH_INDEX_REPO: https://artifactory.research.volexity.com/artifactory/api/pypi/pypi-volexity-services
+  HATCH_INDEX_USER: $ARTIFACTORY_USER
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  PIP_INDEX_URL: https://artifactory.research.volexity.com/artifactory/api/pypi/pypi/simple
+
+lint:
+  stage: hygiene
+  tags: [docker]
+  script:
+    - cargo clippy
+    - hatch fmt
+
+deb:
+  stage: build
+  tags: [docker]
+  artifacts:
+    paths: [./*.deb]
+  script:
+    - debian/genchangelog
+    - dpkg-buildpackage
+    - mv ../*.deb .
+
+wheel:
+  stage: build
+  tags: [docker]
+  artifacts:
+    paths: [dist/*]
+  script: [maturin build]
+
+artifactory:
+  stage: publish
+  tags: [docker]
+  script: [maturin publish]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+(.\d+)+$/

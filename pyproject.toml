@@ -1,0 +1,10 @@
+[project]
+name = "gographer"
+version = "0.1.0"
+
+[build-system]
+requires = ["maturin~=1.8.1"]
+build-backend = "maturin"
+
+[project.scripts]
+gographer = "gographer:Cli.run_cli"

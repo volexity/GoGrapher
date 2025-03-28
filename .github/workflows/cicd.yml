@@ -1,0 +1,23 @@
+name: CI/CD
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+jobs:
+    hygiene:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                components: clippy
+
+            - name: Run Clippy
+              uses: auguwu/clippy-action@1.4.0
+              with:
+                token: ${{ secrets.GITHUB_TOKEN }}
