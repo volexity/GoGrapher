@@ -1,0 +1,20 @@
+Source: python3-volexity-gographer
+Maintainer: Threat Intel Team <threatintel@volexity.com>
+Homepage: https://gitlab.research.volexity.com/threat-intel
+Section: python
+Priority: optional
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-hatchling,
+               python3-hatch-vcs,
+               lsb-release,
+Standards-Version: 4.1.1
+Vcs-Git: https://gitlab.research.volexity.com/threat-intel/gographer.git
+Vcs-Browser: https://gitlab.research.volexity.com/threat-intel/gographer
+
+Package: python3-volexity-gographer
+Architecture: all
+Depends: ${python3:Depends}, ${misc:Depends}
+Description: GoGrapher is a Control Flow Graph (CFG) similarity tool to identify specified libraries functions in garbled GO samples.
