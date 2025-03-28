@@ -1,0 +1,22 @@
+[package]
+name = "gographer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "gographer"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chibihash = "0.5"
+clap = { version = "4.5", features = ["derive"] }
+colored_json = "5.0"
+indicatif = "0.17"
+object = "0.36"
+pyo3 = { version = "0.23", features = ["extension-module"] }
+rand = "0.8"
+rayon = "1.0"
+regex = "1.11"
+serde = "1.0"
+serde_json = "1.0"
+smda = "0.2.12"

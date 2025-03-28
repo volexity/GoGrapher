@@ -1,0 +1,94 @@
+name: Upload Python Package
+
+on:
+    push:
+        tags: [v*]
+
+permissions:
+    contents: read
+
+jobs:
+    linux:
+        runs-on: ${{ matrix.platform.runner }}
+        strategy:
+            matrix:
+                platform:
+                    - runner: ubuntu-24.04
+                      target: x86_64
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                python-version: '>=3.10'
+
+            - name: Build release distributions
+              uses: PyO3/maturin-action@v1
+              with:
+                target: ${{ matrix.platform.target }}
+                args: --release --out dist --find-interpreter
+                sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+                manylinux: auto
+
+            - name: Upload release distributions
+              uses: actions/upload-artifact@v4
+              with:
+                name: release-dists-${{ matrix.platform.target }}
+                path: dist/
+
+    macos:
+        runs-on: ${{ matrix.platform.runner }}
+        strategy:
+            matrix:
+                platform:
+                    - runner: macos-14
+                      target: aarch64
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                python-version: '>=3.10'
+
+            - name: Build release distributions
+              uses: PyO3/maturin-action@v1
+              with:
+                target: ${{ matrix.platform.target }}
+                args: --release --out dist --find-interpreter
+                sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+                manylinux: auto
+
+            - name: Upload release distributions
+              uses: actions/upload-artifact@v4
+              with:
+                name: release-dists-${{ matrix.platform.target }}
+                path: dist/
+
+    pypy-publish:
+        runs-on: ubuntu-latest
+
+        if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+        needs: [linux, macos]
+        permissions:
+            id-token: write
+
+        environment:
+            name: pypi
+            url: https://pypi.org/p/gographer
+
+        steps:
+          - name: Retrieve release distributions
+            uses: actions/download-artifact@v4
+            with:
+                pattern: release-dists-*
+                merge-multiple: true
+                path: dist/
+
+          - name: Publish release distributions to PyPI
+            uses: pypa/gh-action-pypi-publish@v1.12.4
+            with:
+                skip-existing: true
