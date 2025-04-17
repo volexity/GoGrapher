@@ -161,3 +161,14 @@ class Grapher:
         Returns:
             list[Disassembly] : Hashmap of each Control Flow Graph (CFG).
         """
+
+class UnsupportedBinaryFormat(Exception):
+    """Raised when an unsupported sample is processed."""
+
+    @property
+    def message(self) -> str:
+        """Returns the error message of the exception."""
+
+    @property
+    def sample(self) -> str:
+        """Returns the path to the problematic sample."""

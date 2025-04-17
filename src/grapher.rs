@@ -7,11 +7,11 @@ use std::{
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use pyo3::{pyclass, pymethods, PyRef};
+use pyo3::{pyclass, pymethods, PyRef, PyResult};
 use rayon::prelude::*;
 use smda::function::Instruction;
 
-use crate::compare_report::CompareReport;
+use crate::{compare_report::CompareReport, error::Error};
 use crate::control_flow_graph::{BasicBlock, ControlFlowGraph};
 use crate::disassembly::Disassembly;
 use crate::r#match::{Binary as BinaryMatch, Method as MethodMatch};
@@ -135,7 +135,7 @@ impl Grapher {
     pub fn generate_graphs(
         &self,
         sample_list: &[(String, PathBuf)],
-    ) -> Vec<Disassembly> {
+    ) -> Result<Vec<Disassembly>, Error> {
         let mut samples_graph: Vec<Disassembly> = Vec::with_capacity(sample_list.len());
 
         // Generate the graph for each sample in separate threads.
@@ -153,7 +153,7 @@ impl Grapher {
                 );
             }
 
-            sample_list.par_iter().for_each(|(version, sample_path)| {
+            sample_list.par_iter().try_for_each(|(version, sample_path)| -> Result<(), Error> {
                 let samples_graph: Arc<Mutex<&mut Vec<Disassembly>>> =
                     samples_graph.clone();
 
@@ -171,16 +171,19 @@ impl Grapher {
                     }
                 }
 
-                let mut disassembly: Disassembly = Disassembly::new(sample_path.as_path());
+                let mut disassembly: Disassembly = Disassembly::new(sample_path.as_path())?;
                 disassembly.name = version.clone();
 
                 samples_graph
                     .lock()
                     .expect("Unexpected error while aggregating disassemblies")
                     .push(disassembly);
-            });
+
+                Ok(())
+            })?;
         }
-        samples_graph
+
+        Ok(samples_graph)
     }
 
     // Compare two sets of instruction and return their normalized similarity.
@@ -377,7 +380,7 @@ impl Grapher {
     fn generate_graphs_py(
         &self,
         sample_list: Vec<(String, PathBuf)>,
-    ) -> Vec<Disassembly> {
-        self.generate_graphs(&sample_list)
+    ) -> PyResult<Vec<Disassembly>> {
+        Ok(self.generate_graphs(&sample_list)?)
     }
 }

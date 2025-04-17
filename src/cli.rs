@@ -6,6 +6,7 @@ use pyo3::{pyclass, pymethods};
 
 use crate::compare_report::CompareReport;
 use crate::disassembly::Disassembly;
+use crate::error::Error;
 use crate::grapher::Grapher;
 
 
@@ -58,24 +59,30 @@ impl Cli {
         reference_paths.push((sample_filename, args.sample_path.clone()));
 
         // Disassemble the necessary samples.
-        let mut samples_graph: Vec<Disassembly> = grapher.generate_graphs(&reference_paths);
-        let sample_index: usize = samples_graph
-            .iter()
-            .position(|disassembly| disassembly.path == args.sample_path)
-            .expect("Missing sample disassembly");
-        let malware_graph: Disassembly = samples_graph.swap_remove(sample_index);
+        let sample_graph_result: Result<Vec<Disassembly>, Error> = grapher.generate_graphs(&reference_paths);
+        match sample_graph_result {
+            Err(error) => println!("{error}"),
+            Ok(mut samples_graph) => {
+                let sample_index: usize = samples_graph
+                    .iter()
+                    .position(|disassembly| disassembly.path == args.sample_path)
+                    .expect("Missing sample disassembly");
+                let malware_graph: Disassembly = samples_graph.swap_remove(sample_index);
 
-        let report: CompareReport = grapher.compare(malware_graph, samples_graph);
-        let report_json: String = report.to_json();
+                let report: CompareReport = grapher.compare(malware_graph, samples_graph);
+                let report_json: String = report.to_json();
 
-        if let Some(path) = args.output_path {
-            if let Ok(mut out_file) = File::create(path) {
-                out_file.write_all(report_json.as_bytes()).expect("Couldn't write report file");
+                if let Some(path) = args.output_path {
+                    if let Ok(mut out_file) = File::create(path) {
+                        out_file.write_all(report_json.as_bytes()).expect("Couldn't write report file");
+                    }
+                } else {
+                    let report_colored: String = report_json.to_colored_json_auto().expect("Couln't colorise report file");
+                    println!("{report_colored}");
+                }
             }
-        } else {
-            let report_colored: String = report_json.to_colored_json_auto().expect("Couln't colorise report file");
-            println!("{report_colored}");
         }
+
     }
 }
 

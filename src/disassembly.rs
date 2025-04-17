@@ -5,12 +5,12 @@ use std::{
 };
 
 use object::{File, Object, ObjectSymbol, Symbol};
-use pyo3::{pyclass, pymethods, PyRef};
+use pyo3::{pyclass, pymethods, PyRef, PyResult};
 use rand::seq::index::{sample, IndexVec};
 use regex::Regex;
 use smda::{function::Instruction, report::DisassemblyReport, Disassembler};
 
-use crate::control_flow_graph::{BasicBlock, ControlFlowGraph};
+use crate::{control_flow_graph::{BasicBlock, ControlFlowGraph}, error::Error};
 
 /// Data Model of a disassembled binary.
 #[pyclass]
@@ -26,7 +26,7 @@ pub struct Disassembly {
 impl Disassembly {
     // TODO: Some of these `expects` should be returned as results...
     /// Generate the set of Control Flow Graphs (CFG) for the specified binary.
-    pub fn new(sample_path: &Path) -> Self {
+    pub fn new(sample_path: &Path) -> Result<Self, Error> {
         let file_name = sample_path
             .file_name()
             .expect("Sample has no file name")
@@ -40,69 +40,80 @@ impl Disassembly {
             graph_symbols.insert(symbol.address(), symbol);
         }
 
-        let sample_dissassembly: DisassemblyReport = Disassembler::disassemble_file(
+        let sample_dissassembly_result: Result<DisassemblyReport, smda::Error> = Disassembler::disassemble_file(
             &sample_path.to_string_lossy(),
             true,
             true,
             Some(&sample_data),
-        )
-        .expect("Failed to disassemble sample");
+        );
+        
+        match sample_dissassembly_result {
+            Err(error) => match error {
+                smda::Error::UnsupportedFormatError => {
+                    Err(Error::UnsupportedBinaryFormat {
+                        sample: sample_path.to_string_lossy().to_string(),
+                    })
+                },
+                _ => panic!("Failed to disassemble sample"),
+            },
+            Ok(sample_dissassembly) => {
+                // Convert each smda_function to a ControlFlowGraph.
+                let smda_functions = sample_dissassembly
+                    .get_functions()
+                    .expect("Failed to get functions");
 
-        // Convert each smda_function to a ControlFlowGraph.
-        let smda_functions = sample_dissassembly
-            .get_functions()
-            .expect("Failed to get functions");
+                let mut graphs: Vec<ControlFlowGraph> = Vec::with_capacity(smda_functions.len());
+                for (fct_offset, function) in smda_functions {
+                    let symbol_name: &str = if graph_symbols.contains_key(fct_offset) {
+                        graph_symbols[fct_offset]
+                            .name()
+                            .expect("Failed to get symbol name")
+                    } else {
+                        ""
+                    };
 
-        let mut graphs: Vec<ControlFlowGraph> = Vec::with_capacity(smda_functions.len());
-        for (fct_offset, function) in smda_functions {
-            let symbol_name: &str = if graph_symbols.contains_key(fct_offset) {
-                graph_symbols[fct_offset]
-                    .name()
-                    .expect("Failed to get symbol name")
-            } else {
-                ""
-            };
+                    // Convert each smda_block to a basic block.
+                    let mut blocks: Vec<BasicBlock> = Vec::new();
+                    let smda_blocks: &HashMap<u64, Vec<Instruction>> =
+                        function.get_blocks().expect("Failed to get blocks");
+                    for (block_offset, instructions) in smda_blocks {
+                        let block = BasicBlock::new(*block_offset, instructions);
+                        blocks.push(block);
+                    }
+                    blocks.sort_by_key(|a| a.offset);
 
-            // Convert each smda_block to a basic block.
-            let mut blocks: Vec<BasicBlock> = Vec::new();
-            let smda_blocks: &HashMap<u64, Vec<Instruction>> =
-                function.get_blocks().expect("Failed to get blocks");
-            for (block_offset, instructions) in smda_blocks {
-                let block = BasicBlock::new(*block_offset, instructions);
-                blocks.push(block);
-            }
-            blocks.sort_by_key(|a| a.offset);
+                    // Pre-compute the block indices.
+                    let mut block_indices: HashMap<u64, usize> = HashMap::new();
+                    for (index, block) in blocks.iter().enumerate() {
+                        block_indices.insert(block.offset, index);
+                    }
 
-            // Pre-compute the block indices.
-            let mut block_indices: HashMap<u64, usize> = HashMap::new();
-            for (index, block) in blocks.iter().enumerate() {
-                block_indices.insert(block.offset, index);
-            }
+                    // Resolve the incomming and outgoing edges.
+                    for (offset, out_refs) in &function.blockrefs {
+                        let block_index: usize = *block_indices
+                            .get(offset)
+                            .expect("Failed to get block for offset");
 
-            // Resolve the incomming and outgoing edges.
-            for (offset, out_refs) in &function.blockrefs {
-                let block_index: usize = *block_indices
-                    .get(offset)
-                    .expect("Failed to get block for offset");
-
-                for out_ref in out_refs {
-                    let out_index: usize = *block_indices.get(out_ref).expect("Invalid block ref");
-                    blocks[block_index].out_refs.push(out_index);
-                    blocks[out_index].in_refs.push(block_index);
+                        for out_ref in out_refs {
+                            let out_index: usize = *block_indices.get(out_ref).expect("Invalid block ref");
+                            blocks[block_index].out_refs.push(out_index);
+                            blocks[out_index].in_refs.push(block_index);
+                        }
+                    }
+                    // Sorts the block list by offsets.
+                    let graph = ControlFlowGraph::new(symbol_name, *fct_offset, blocks);
+                    graphs.push(graph);
                 }
-            }
-            // Sorts the block list by offsets.
-            let graph = ControlFlowGraph::new(symbol_name, *fct_offset, blocks);
-            graphs.push(graph);
-        }
 
-        // Sorts the final list by offsets.
-        graphs.sort_by_key(|a| a.offset);
+                // Sorts the final list by offsets.
+                graphs.sort_by_key(|a| a.offset);
 
-        Disassembly {
-            name: file_name.to_string(),
-            path: sample_path.to_path_buf(),
-            graphs,
+                Ok(Disassembly {
+                    name: file_name.to_string(),
+                    path: sample_path.to_path_buf(),
+                    graphs,
+                })
+            },
         }
     }
 
@@ -159,8 +170,8 @@ impl Disassembly {
 #[pymethods]
 impl Disassembly {
     #[new]
-    fn py_new(sample_path: PathBuf) -> Self {
-        Disassembly::new(&sample_path)
+    fn py_new(sample_path: PathBuf) -> PyResult<Self> {
+        Ok(Disassembly::new(&sample_path)?)
     }
 
     #[pyo3(name = "filter_symbol")]
