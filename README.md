@@ -2,9 +2,19 @@
 
 GoGrapher is a Control Flow Graph (CFG) similarity tool to identify matching functions between two binaries.
 
-## How to build
+## How to install
 
-To build GoGrapher use cargo's usual build command :
+To install GoGrapher, we recommend pulling directly from PyPi :
+
+```bash
+pip install gographer
+```
+
+This will install GoGrapher as well as its necessary dependencies.
+
+### Building from source
+
+If you wish to build & install GoGrapher from source instead, use cargo's usual build command :
 ```bash
 cargo build --release
 ```
