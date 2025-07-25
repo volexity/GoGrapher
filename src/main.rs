@@ -1,5 +1,3 @@
-#![deny(elided_lifetimes_in_paths)]
-
 extern crate gographer;
 
 use gographer::Cli;
