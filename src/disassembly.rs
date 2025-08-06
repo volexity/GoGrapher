@@ -2,10 +2,18 @@ use std::{
     borrow::Borrow,
     collections::HashMap,
     path::{Path, PathBuf},
+    thread,
+    time::Duration
 };
 
 use object::{File, Object, ObjectSymbol, Symbol};
-use pyo3::{pyclass, pymethods, PyRef, PyResult};
+use pyo3::{
+    pyclass,
+    pymethods,
+    PyRef,
+    PyResult,
+    Python,
+    exceptions::PyKeyboardInterrupt};
 use rand::seq::index::{sample, IndexVec};
 use regex::Regex;
 use smda::{function::Instruction, report::DisassemblyReport, Disassembler};
@@ -14,6 +22,7 @@ use crate::{control_flow_graph::{BasicBlock, ControlFlowGraph}, error::Error};
 
 /// Data Model of a disassembled binary.
 #[pyclass]
+#[derive(Clone)]
 pub struct Disassembly {
     #[pyo3(get)]
     pub(crate) name: String,
@@ -33,7 +42,6 @@ impl Disassembly {
             .to_string_lossy();
         let sample_data = std::fs::read(sample_path).expect("Could not read sample data");
         let parsed_sample = File::parse(&*sample_data).expect("Could not parse sample data");
-
         // Build the hashmap of the symbols for fast access.
         let mut graph_symbols: HashMap<u64, Symbol> = HashMap::new();
         for symbol in parsed_sample.symbols() {
@@ -170,8 +178,22 @@ impl Disassembly {
 #[pymethods]
 impl Disassembly {
     #[new]
-    fn py_new(sample_path: PathBuf) -> PyResult<Self> {
-        Ok(Disassembly::new(&sample_path)?)
+    fn py_new(sample_path: PathBuf, py: Python) -> PyResult<Self> {
+        let thread_handle: thread::JoinHandle<Result<Self, Error>> = thread::spawn(move || {
+            Disassembly::new(&sample_path)
+        });
+
+        loop {
+            if let Err(_) = py.check_signals() { 
+                break Err(
+                    PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
+                );
+            }
+            if thread_handle.is_finished() {
+                break Ok(thread_handle.join().unwrap()?);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[pyo3(name = "filter_symbol")]

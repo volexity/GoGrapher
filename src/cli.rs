@@ -2,7 +2,9 @@ use std::{fs::File, io::Write, path::PathBuf};
 
 use clap::Parser;
 use colored_json::ToColoredJson;
-use pyo3::{pyclass, pymethods};
+use pyo3::{pyclass, pymethods, Python};
+use std::thread;
+use std::time::Duration;
 
 use crate::compare_report::CompareReport;
 use crate::disassembly::Disassembly;
@@ -77,7 +79,7 @@ impl Cli {
                         out_file.write_all(report_json.as_bytes()).expect("Couldn't write report file");
                     }
                 } else {
-                    let report_colored: String = report_json.to_colored_json_auto().expect("Couln't colorise report file");
+                    let report_colored: String = report_json.to_colored_json_auto().expect("Couldn't colorise report file");
                     println!("{report_colored}");
                 }
             }
@@ -91,7 +93,18 @@ impl Cli {
     /// Parse the cli arguments and execute the requested commands.
     #[staticmethod]
     #[pyo3(name = "run_cli")]
-    fn run_cli_py() {
-        Cli::parse_cli(&std::env::args().collect::<Vec<String>>()[1..]);
+    fn run_cli_py(py: Python) {
+        let thread_handle: thread::JoinHandle<()> = thread::spawn(|| {
+            Cli::parse_cli(&std::env::args().collect::<Vec<String>>()[1..]);
+        });
+
+        loop {
+            if let Err(_) = py.check_signals() { break; }
+            if thread_handle.is_finished() {
+                let _ = thread_handle.join();
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 }

@@ -4,10 +4,18 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
+    thread
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use pyo3::{pyclass, pymethods, PyRef, PyResult};
+use pyo3::{
+    pyclass, 
+    pymethods, 
+    PyRef, 
+    PyResult, 
+    Python, 
+    exceptions::PyKeyboardInterrupt
+};
 use rayon::prelude::*;
 use smda::function::Instruction;
 
@@ -73,6 +81,7 @@ impl<'a> Iterator for InstructionStreamerIter<'a> {
 
 /// Compute a summary of the similarities between a malware sample and a set of clean libraries.
 #[pyclass]
+#[derive(Clone)]
 pub struct Grapher {
     display_progress: bool,
     multiprogress: Arc<Option<MultiProgress>>,
@@ -358,8 +367,26 @@ impl Grapher {
 impl Grapher {
     #[new]
     #[pyo3(signature = (*, threshold, display_progress))]
-    fn py_new(threshold: f32, display_progress: bool) -> Self {
-        Grapher::new(threshold, display_progress)
+    fn py_new(
+        threshold: f32,
+        display_progress: bool,
+        py: Python
+    ) -> PyResult<Self> {
+        let thread_handle: thread::JoinHandle<Self> = thread::spawn(move || {
+            Grapher::new(threshold, display_progress)
+        });
+
+        loop {
+            if let Err(_) = py.check_signals() { 
+                break Err(
+                    PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
+                );
+            }
+            if thread_handle.is_finished() {
+                break Ok(thread_handle.join().unwrap());
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[pyo3(name = "compare")]
@@ -367,20 +394,53 @@ impl Grapher {
         &self,
         sample_graph: PyRef<Disassembly>,
         reference_graphs: Vec<PyRef<Disassembly>>,
-    ) -> CompareReport {
-        let sample_ref: &Disassembly = sample_graph.borrow();
-        let references: Vec<&Disassembly> = reference_graphs.iter().map(|graph| {
-            graph.borrow()
+        py: Python
+    ) -> PyResult<CompareReport> {
+        let grapher = self.clone();
+        let sample_ref: Disassembly = sample_graph.deref().clone();
+        let disassemblies: Vec<Disassembly> = reference_graphs.iter().map(|graph| {
+            graph.deref().clone()
         }).collect();
 
-        self.compare(sample_ref, references)
+        let thread_handle: thread::JoinHandle<CompareReport> = thread::spawn(move || {
+            grapher.compare(&sample_ref, disassemblies.iter().collect())
+        });
+
+        loop {
+            if let Err(_) = py.check_signals() { 
+                break Err(
+                    PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
+                );
+            }
+            if thread_handle.is_finished() {
+                break Ok(thread_handle.join().unwrap());
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[pyo3(name = "generate_graphs")]
     fn generate_graphs_py(
         &self,
         sample_list: Vec<(String, PathBuf)>,
+        py: Python
     ) -> PyResult<Vec<Disassembly>> {
-        Ok(self.generate_graphs(&sample_list)?)
+        let grapher = self.clone();
+
+        let thread_handle: thread::JoinHandle<Result<Vec<Disassembly>, Error>> = thread::spawn(move || {
+            grapher.generate_graphs(&sample_list)
+        });
+
+        loop {
+            if let Err(_) = py.check_signals() { 
+                break Err(
+                    PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
+                );
+            }
+            if thread_handle.is_finished() {
+                break Ok(thread_handle.join().unwrap()?);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 }
