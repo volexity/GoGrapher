@@ -99,7 +99,7 @@ impl Cli {
         });
 
         loop {
-            if let Err(_) = py.check_signals() { break; }
+            if py.check_signals().is_err() { break; }
             if thread_handle.is_finished() {
                 let _ = thread_handle.join();
                 break;

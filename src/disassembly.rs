@@ -184,7 +184,7 @@ impl Disassembly {
         });
 
         loop {
-            if let Err(_) = py.check_signals() { 
+            if py.check_signals().is_err() {
                 break Err(
                     PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
                 );

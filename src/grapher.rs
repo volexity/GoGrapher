@@ -9,11 +9,11 @@ use std::{
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use pyo3::{
-    pyclass, 
-    pymethods, 
-    PyRef, 
-    PyResult, 
-    Python, 
+    pyclass,
+    pymethods,
+    PyRef,
+    PyResult,
+    Python,
     exceptions::PyKeyboardInterrupt
 };
 use rayon::prelude::*;
@@ -377,7 +377,7 @@ impl Grapher {
         });
 
         loop {
-            if let Err(_) = py.check_signals() { 
+            if py.check_signals().is_err() {
                 break Err(
                     PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
                 );
@@ -407,7 +407,7 @@ impl Grapher {
         });
 
         loop {
-            if let Err(_) = py.check_signals() { 
+            if py.check_signals().is_err() {
                 break Err(
                     PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
                 );
@@ -432,7 +432,7 @@ impl Grapher {
         });
 
         loop {
-            if let Err(_) = py.check_signals() { 
+            if py.check_signals().is_err() {
                 break Err(
                     PyKeyboardInterrupt::new_err("Rust: received ctrl-c.")
                 );
