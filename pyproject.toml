@@ -1,6 +1,6 @@
 [project]
 name = "gographer"
-version = "1.2.0"
+version = "1.2.1"
 
 [build-system]
 requires = ["maturin~=1.8.1"]
