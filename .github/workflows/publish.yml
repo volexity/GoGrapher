@@ -8,15 +8,32 @@ permissions:
     contents: read
 
 jobs:
-    linux:
+    build:
         runs-on: ${{ matrix.platform.runner }}
         strategy:
             matrix:
+                python-version:
+                  - '3.10'
+                  - '3.11'
+                  - '3.12'
+                  - '3.13'
+                  - '3.14'
+
                 platform:
-                    - runner: ubuntu-24.04
-                      target: x86_64
-                    - runner: ubuntu-24.04-arm
-                      target: aarch64
+                    - { name: linux, runner: ubuntu-24.04, target: x86_64, manylinux: auto, target-triple: x86_64-unknown-linux-gnu }
+                    - { name: linux, runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, target-triple: aarch64-unknown-linux-gnu }
+
+                    - { name: windows, runner: windows-latest, target: x86, manylinux: auto, target-triple: i686-pc-windows-msvc, architecture: x86 }
+                    - { name: windows, runner: windows-latest, target: x64, manylinux: auto, target-triple: x86_64-pc-windows-msvc, architecture: x64 }
+                    - { name: windows, runner: windows-11-arm, target: aarch64, manylinux: auto, target-triple: aarch64-pc-windows-msvc, architecture: arm64 }
+
+                    - { name: macos, runner: macos-14, target: x86_64, manylinux: auto, target-triple: x86_64-apple-darwin }
+                    - { name: macos, runner: macos-14, target: aarch64, manylinux: auto, target-triple: aarch64-apple-darwin }
+
+                exclude:
+                  # 3.10 only supports ARM on linux (Github)
+                  - { python-version: '3.10', platform: { name: windows, target: aarch64 } }
+                  - { python-version: '3.10', platform: { name: macos, target: aarch64 } }
 
         steps:
             - uses: actions/checkout@v4
@@ -24,94 +41,33 @@ jobs:
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
-                python-version: '>=3.10'
+                python-version: ${{ matrix.python-version }}
+                architecture: ${{ matrix.platform.architecture }}
+
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                target: ${{ matrix.platform.target-triple }}
 
             - name: Build release distributions
               uses: PyO3/maturin-action@v1
               with:
                 target: ${{ matrix.platform.target }}
-                args: --release --out dist
+                args: -i ${{ matrix.python-version }} --release --out dist
                 sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-                manylinux: auto
+                manylinux: ${{ matrix.platform.manylinux }}
 
             - name: Upload release distributions
               uses: actions/upload-artifact@v4
               with:
-                name: release-dists-linux-${{ matrix.platform.target }}
-                path: dist/
-
-    windows:
-        runs-on: ${{ matrix.platform.runner }}
-        strategy:
-            matrix:
-                platform:
-                    - runner: windows-latest
-                      target: x64
-                    - runner: windows-latest
-                      target: x86
-                    - runner: windows-11-arm
-                      target: aarch64
-
-        steps:
-            - uses: actions/checkout@v4
-
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                python-version: '>=3.10'
-                architecture: ${{ matrix.platform.target == 'aarch64' && 'arm64' || matrix.platform.target }}
-
-            - name: Build release distributions
-              uses: PyO3/maturin-action@v1
-              with:
-                target: ${{ matrix.platform.target == 'x86' && 'i686-pc-windows-msvc' || matrix.platform.target }}
-                args: --release --out dist
-                sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-                manylinux: auto
-
-            - name: Upload release distributions
-              uses: actions/upload-artifact@v4
-              with:
-                name: release-dists-windows-${{ matrix.platform.target }}
-                path: dist/
-
-    macos:
-        runs-on: ${{ matrix.platform.runner }}
-        strategy:
-            matrix:
-                platform:
-                    - runner: macos-13
-                      target: x86_64
-                    - runner: macos-14
-                      target: aarch64
-
-        steps:
-            - uses: actions/checkout@v4
-
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                python-version: '>=3.10'
-
-            - name: Build release distributions
-              uses: PyO3/maturin-action@v1
-              with:
-                target: ${{ matrix.platform.target }}
-                args: --release --out dist
-                sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-                manylinux: auto
-
-            - name: Upload release distributions
-              uses: actions/upload-artifact@v4
-              with:
-                name: release-dists-macos-${{ matrix.platform.target }}
+                name: release-dists-${{ matrix.platform.name }}-${{ matrix.platform.target-triple }}-${{matrix.python-version}}
                 path: dist/
 
     pypy-publish:
         runs-on: ubuntu-latest
 
         if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-        needs: [linux, windows, macos]
+        needs: [build]
         permissions:
             id-token: write
 
